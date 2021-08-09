@@ -8,3 +8,10 @@ Args:
 -usejre (optional): Downloads a jre(if not exists) and uses it.  
 -username <username> (required): Username of the player  
 -version <version> (required): Version of the you want to play  
+
+Credits:
+Downloading Assets by Ahmetflix
+Downloading Libraries by Ahmetflix
+Unpack Natives by Fatih Ulu
+VM Args and Program Args by Fatih Ulu
+JRE Downloading by Fatih Ulu and Ahmetflix
