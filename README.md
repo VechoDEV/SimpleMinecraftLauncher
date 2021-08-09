@@ -9,7 +9,7 @@ Args:
 -username <username> (required): Username of the player  
 -version <version> (required): Version of the you want to play  
 
-Credits:
+Credits:  
 Downloading Assets by Ahmetflix  
 Downloading Libraries by Ahmetflix  
 Unpack Natives by Fatih Ulu  
