@@ -3,8 +3,11 @@ package xyz.vecho.SimpleMinecraftLauncher;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,10 +82,12 @@ public class Main {
 	public static boolean useJre = false;
 	
 	public static void main(String[] args) throws Exception {
+		System.out.println("SimpleMinecraftLauncher by FatihUlu and Ahmetflix");
 		OptionParser optionparser = new OptionParser();
 		optionparser.allowsUnrecognizedOptions();
 		optionparser.accepts("downloadjre");
 		optionparser.accepts("usejre");
+		optionparser.accepts("skipupdate");
 		OptionSpec<String> versionspec = optionparser.accepts("version").withRequiredArg().required();
 		OptionSpec<String> usernamespec = optionparser.accepts("username").withRequiredArg().required();
 		OptionSet optionset = optionparser.parse(args);
@@ -101,91 +106,104 @@ public class Main {
 		clean(NATIVES);
 		if (!VERSION_MANIFEST.exists()) StreamUtils.copy(new URL(VERSION_MANIFEST_URL).openStream(), new FileOutputStream(VERSION_MANIFEST));
 		System.out.println("Directories and files checked");
-		
-		boolean flag = optionset.has("downloadjre") || optionset.has("usejre");
-		if (flag) {
-			System.out.println("Checking JRE");
-			downloadJre(OSUtils.is64());
-			useJre = true;
-		}
-		
-		String version = optionset.valueOf(versionspec);
-		JsonObject manifest = JsonParser.parseReader(new FileReader(VERSION_MANIFEST)).getAsJsonObject();
-		JsonArray versions = manifest.getAsJsonArray("versions");
-		
-		boolean contains = false;
-		JsonObject versionObj = null;
-		for (JsonElement element : versions) {
-			JsonObject versionObject = element.getAsJsonObject();
-			if (versionObject.get("id").getAsString().equalsIgnoreCase(version)) {
-				contains = true;
-				versionObj = versionObject;
-			}
-		}
-		
-		if (!contains) {
-			String versionLog = "";
-			for (JsonElement element : versions) {
-				JsonObject versionObject = element.getAsJsonObject();
-				if (versionObject.get("type").getAsString().equalsIgnoreCase("release")) {
-					versionLog = (versionLog + "   " + versionObject.get("id").getAsString()).trim();
-				}
-			}
-			System.out.println("No such version found. Found versions: \n"+versionLog);
-		} else {
-			File versionDir = new File(VERSIONS, version);
-			versionDir.mkdirs();
-			File versionJson = new File(versionDir, version+".json");
-			File versionJar = new File(versionDir, version+".jar");
-			if (!versionJson.exists()) StreamUtils.copy(new URL(versionObj.get("url").getAsString()).openStream(), new FileOutputStream(versionJson));
-			versionObj = JsonParser.parseReader(new FileReader(versionJson)).getAsJsonObject();
-			JsonObject assetIndexObj = versionObj.getAsJsonObject("assetIndex");
-			File assetIndex = new File(ASSETS_INDEXES_DIR, assetIndexObj.get("id").getAsString()+".json");
-			if (!assetIndex.exists() || !assetIndexObj.get("sha1").getAsString().equalsIgnoreCase(HashUtils.sha1(assetIndex))) StreamUtils.copy(new URL(assetIndexObj.get("url").getAsString()).openStream(), new FileOutputStream(assetIndex));
-			System.out.println("Checking assets for "+ version);
-			MinecraftUtils.downloadAssets(assetIndex, ASSETS_OBJECTS_DIR);
-			System.out.println("Assets checked for "+ version);
-			System.out.println("Checking libraries for "+ version);
-			MinecraftUtils.downloadLib(LIBRARIES_DIR, versionJson, version);
-			System.out.println("Libraries checked for "+ version);
-			System.out.println("Unpacking natives");
-			MinecraftUtils.unpackNatives(version, NATIVES);
-			System.out.println("Checking client jar");
-			JsonObject clientDownload = versionObj.getAsJsonObject("downloads").getAsJsonObject("client");
-			if (!versionJar.exists() || !clientDownload.get("sha1").getAsString().equalsIgnoreCase(HashUtils.sha1(versionJar))) StreamUtils.copy(new URL(clientDownload.get("url").getAsString()).openStream(), new FileOutputStream(versionJar));
-			System.out.println("Client jar checked");
-			
-			System.out.println("Game launching...");
-			System.out.println("TIP: To copy settings from other launchers copy the options.txt and paste in the .vecho folder");
-			// launching
-			String mainClass = versionObj.get("mainClass").getAsString();
-			List<String> vmArgs = MinecraftUtils.generateVmArgs(version, NATIVES, versionJar);
-			List<String> programArgs = MinecraftUtils.generateProgramArgs(versionJson, optionset.valueOf(usernamespec), GAME_DIR.getAbsolutePath(), ASSETS_DIR.getAbsolutePath());
-			ProcessBuilder builder = new ProcessBuilder();
-			
-			List<String> commands = new ArrayList<>();
-			
-			if (useJre) {
-				File bin = new File(JRE, "bin");
-				File javawFile = new File(bin, "javaw.exe");
-				commands.add("\""+javawFile.getAbsolutePath()+"\"");
-			} else commands.add("javaw");
-			
-			commands.addAll(vmArgs);
-			
-			commands.add(mainClass);
-			
-			
-			commands.addAll(programArgs);
-			
-			builder.command(commands);
-			
-			builder.directory(GAME_DIR);
-			
-			Process p = builder.start();
+
+		if (!optionset.has("skipupdate")) {
+			System.out.println("info : Due to update check you can see some logs twice");
+			File smlCore = new File(GAME_DIR, "smlcore.jar");
+			File smlJar = new File(GAME_DIR, "sml.jar");
+			JsonObject latestUpdateObject = JsonParser.parseReader(new InputStreamReader(connect("https://vecho.cf/api/sml/lastupdate.php"))).getAsJsonObject();
+			if (!smlCore.exists() || !latestUpdateObject.get("smlcore").getAsString().equalsIgnoreCase(HashUtils.sha1(smlCore))) StreamUtils.copy(connect("https://vecho.cf/api/sml/smlcore.jar"), new FileOutputStream(smlCore));
+			Process p = Runtime.getRuntime().exec("javaw -jar \""+smlCore.getAbsolutePath()+"\" -jarpath \""+smlJar.getAbsolutePath()+"\" -username "+optionset.valueOf(usernamespec)+" -version "+optionset.valueOf(versionspec));
 			while (p.isAlive()) {
 				StreamUtils.copy(p.getInputStream(), System.out);
 				StreamUtils.copy(p.getErrorStream(), System.err);
+			}
+		} else {
+			boolean flag = optionset.has("downloadjre") || optionset.has("usejre");
+			if (flag) {
+				System.out.println("Checking JRE");
+				downloadJre(OSUtils.is64());
+				useJre = true;
+			}
+			
+			String version = optionset.valueOf(versionspec);
+			JsonObject manifest = JsonParser.parseReader(new FileReader(VERSION_MANIFEST)).getAsJsonObject();
+			JsonArray versions = manifest.getAsJsonArray("versions");
+			
+			boolean contains = false;
+			JsonObject versionObj = null;
+			for (JsonElement element : versions) {
+				JsonObject versionObject = element.getAsJsonObject();
+				if (versionObject.get("id").getAsString().equalsIgnoreCase(version)) {
+					contains = true;
+					versionObj = versionObject;
+				}
+			}
+			
+			if (!contains) {
+				String versionLog = "";
+				for (JsonElement element : versions) {
+					JsonObject versionObject = element.getAsJsonObject();
+					if (versionObject.get("type").getAsString().equalsIgnoreCase("release")) {
+						versionLog = (versionLog + "   " + versionObject.get("id").getAsString()).trim();
+					}
+				}
+				System.out.println("No such version found. Found versions: \n"+versionLog);
+			} else {
+				File versionDir = new File(VERSIONS, version);
+				versionDir.mkdirs();
+				File versionJson = new File(versionDir, version+".json");
+				File versionJar = new File(versionDir, version+".jar");
+				if (!versionJson.exists()) StreamUtils.copy(new URL(versionObj.get("url").getAsString()).openStream(), new FileOutputStream(versionJson));
+				versionObj = JsonParser.parseReader(new FileReader(versionJson)).getAsJsonObject();
+				JsonObject assetIndexObj = versionObj.getAsJsonObject("assetIndex");
+				File assetIndex = new File(ASSETS_INDEXES_DIR, assetIndexObj.get("id").getAsString()+".json");
+				if (!assetIndex.exists() || !assetIndexObj.get("sha1").getAsString().equalsIgnoreCase(HashUtils.sha1(assetIndex))) StreamUtils.copy(new URL(assetIndexObj.get("url").getAsString()).openStream(), new FileOutputStream(assetIndex));
+				System.out.println("Checking assets for "+ version);
+				MinecraftUtils.downloadAssets(assetIndex, ASSETS_OBJECTS_DIR);
+				System.out.println("Assets checked for "+ version);
+				System.out.println("Checking libraries for "+ version);
+				MinecraftUtils.downloadLib(LIBRARIES_DIR, versionJson, version);
+				System.out.println("Libraries checked for "+ version);
+				System.out.println("Unpacking natives");
+				MinecraftUtils.unpackNatives(version, NATIVES);
+				System.out.println("Checking client jar");
+				JsonObject clientDownload = versionObj.getAsJsonObject("downloads").getAsJsonObject("client");
+				if (!versionJar.exists() || !clientDownload.get("sha1").getAsString().equalsIgnoreCase(HashUtils.sha1(versionJar))) StreamUtils.copy(new URL(clientDownload.get("url").getAsString()).openStream(), new FileOutputStream(versionJar));
+				System.out.println("Client jar checked");
+				
+				System.out.println("Game launching...");
+				System.out.println("TIP: To copy settings from other launchers copy the options.txt and paste in the .vecho folder");
+				// launching
+				String mainClass = versionObj.get("mainClass").getAsString();
+				List<String> vmArgs = MinecraftUtils.generateVmArgs(version, NATIVES, versionJar);
+				List<String> programArgs = MinecraftUtils.generateProgramArgs(versionJson, optionset.valueOf(usernamespec), GAME_DIR.getAbsolutePath(), ASSETS_DIR.getAbsolutePath());
+				ProcessBuilder builder = new ProcessBuilder();
+				
+				List<String> commands = new ArrayList<>();
+				
+				if (useJre) {
+					File bin = new File(JRE, "bin");
+					File javawFile = new File(bin, "javaw.exe");
+					commands.add("\""+javawFile.getAbsolutePath()+"\"");
+				} else commands.add("javaw");
+				
+				commands.addAll(vmArgs);
+				
+				commands.add(mainClass);
+				
+				
+				commands.addAll(programArgs);
+				
+				builder.command(commands);
+				
+				builder.directory(GAME_DIR);
+				
+				Process p = builder.start();
+				while (p.isAlive()) {
+					StreamUtils.copy(p.getInputStream(), System.out);
+					StreamUtils.copy(p.getErrorStream(), System.err);
+				}
 			}
 		}
 	}
@@ -222,6 +240,14 @@ public class Main {
     	}
     	System.out.println("JRE Checked");
     }
+    
+	public static InputStream connect(String url) throws IOException {
+		final HttpURLConnection conn = (HttpURLConnection)new URL(url).openConnection();
+		conn.setRequestMethod("GET");
+		conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.95 Safari/537.11");
+		conn.connect();
+		return conn.getInputStream();
+	}
     
     private static void clean(File dir) {
     	for (File file : dir.listFiles()) {

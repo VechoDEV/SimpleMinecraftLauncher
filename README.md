@@ -15,3 +15,4 @@ Downloading Libraries by Ahmetflix
 Unpack Natives by Fatih Ulu  
 VM Args and Program Args by Fatih Ulu  
 JRE Downloading by Fatih Ulu and Ahmetflix  
+SmlCore(Updater) by Ahmetflix  
