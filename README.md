@@ -8,6 +8,7 @@ Args:
 -usejre (optional): Downloads a jre(if not exists) and uses it.  
 -username <username> (required): Username of the player  
 -version <version> (required): Version of the you want to play  
+-skipupdate (optional): Dont checks updates(Not starts SmlCore)  
 
 Credits:  
 Downloading Assets by Ahmetflix  
